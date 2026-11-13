@@ -1,0 +1,35 @@
+Data Analysis Agent Complete — local verification
+Date: 2026-11-13
+
+Command: python -m pytest -q --disable-warnings
+Result: 24 passed (13 warnings, mostly missing CJK plotting fonts in container)
+
+Verified offline:
+- CSV/XLSX loading, schema limits, descriptions, missingness and correlations
+- Group aggregation, numeric filters, invalid fields/unknown tool rejection
+- Matplotlib PNG generation without LLM-supplied arbitrary executable code
+- Existing cleaning preview is read-only and requires explicit confirm to mutate
+- Stale cleaning proposal revision or forged preview is rejected
+- Day/week/month trend aggregation, date ordering, invalid date handling
+- Trend chart PNG generation, period truncation, no invented missing-date zeroes
+- Fake-client agent multi-round Function Calling and tool selection override
+
+Sample data manual tool results:
+- sample_data/sales_demo.csv: 120 rows, 7 columns
+- sum of sales by region: 西南=6641.96; 华南=6034.75; 华东=5537.34; 华北=5080.95
+- monthly sales sums: Jan=5769.58; Feb=5494.58; Mar=6273.49; Apr=5757.35
+- fill median for 客户满意度: missing cells 8 -> 0, rows remain 120
+
+Validation NOT performed in this environment:
+- Actual DeepSeek API requests (no user's private API key provided).
+  Running 'python scripts/check_deepseek.py' without key returns 2, no network call.
+- Live Streamlit startup and browser click-through: Streamlit is not installed in
+  the container and package installation failed because DNS/network is unavailable.
+
+How to complete final acceptance on user's machine:
+1. pip install -r requirements.txt
+2. python -m pytest -q
+3. Set DEEPSEEK_API_KEY privately in .env
+4. python scripts/check_deepseek.py
+5. streamlit run app_streamlit.py
+6. Follow docs/ACCEPTANCE.md and save screenshots / manual results.
