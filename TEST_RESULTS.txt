@@ -1,18 +1,23 @@
-Data Analysis Agent Complete — local verification
-Date: 2026-11-13
+Data Analysis Agent — local verification
+Date: 2026-11-15
 
 Command: python -m pytest -q --disable-warnings
-Result: 24 passed (13 warnings, mostly missing CJK plotting fonts in container)
+Result: 45 passed (1 warning: missing CJK plotting font)
 
 Verified offline:
 - CSV/XLSX loading, schema limits, descriptions, missingness and correlations
 - Group aggregation, numeric filters, invalid fields/unknown tool rejection
+- Multi-dimensional multi-metric aggregation (aggregate_table) and metric definitions
+- AND/OR combined filters, explicit date-string parsing, missing/invalid exclusion
+- Business profile auto-detection and manual mode switch
+- Observability stats: round/tool timing, model request count, token usage, trace export
 - Matplotlib PNG generation without LLM-supplied arbitrary executable code
 - Existing cleaning preview is read-only and requires explicit confirm to mutate
 - Stale cleaning proposal revision or forged preview is rejected
 - Day/week/month trend aggregation, date ordering, invalid date handling
 - Trend chart PNG generation, period truncation, no invented missing-date zeroes
-- Fake-client agent multi-round Function Calling and tool selection override
+- Fake-client agent multi-round Function Calling, tool selection override, error feedback
+- Streamlit AppTest offline interaction (multi-dim aggregation, combo filter, reset invalidation)
 
 Sample data manual tool results:
 - sample_data/sales_demo.csv: 120 rows, 7 columns
@@ -23,8 +28,8 @@ Sample data manual tool results:
 Validation NOT performed in this environment:
 - Actual DeepSeek API requests (no user's private API key provided).
   Running 'python scripts/check_deepseek.py' without key returns 2, no network call.
-- Live Streamlit startup and browser click-through: Streamlit is not installed in
-  the container and package installation failed because DNS/network is unavailable.
+- Live Streamlit browser click-through and real-model tool routing: AppTest covers
+  offline interaction but is not equivalent to browser visual acceptance.
 
 How to complete final acceptance on user's machine:
 1. pip install -r requirements.txt
