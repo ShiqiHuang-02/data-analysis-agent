@@ -1,217 +1,161 @@
 # Data Analysis Agent
 
-一个基于 DeepSeek 和 Function Calling 实现的数据分析 Agent，支持通过自然语言完成常见的数据处理、统计分析和可视化任务。
+基于 Python、DeepSeek API 与 Function Calling 的数据分析应用，支持通过自然语言完成结构化数据探索、统计汇总、趋势分析、可视化与数据清洗。
 
-项目使用 Streamlit 构建交互界面，Pandas 负责数据计算，Matplotlib 和 Seaborn 负责绘图。用户可以上传 CSV 或 Excel 文件，通过对话完成数据探索、分组统计、时间趋势分析以及简单的数据清洗。
+项目采用单 Agent 工具调用架构：模型负责理解问题、选择工具并生成分析说明，Pandas 与 SQLite 负责执行计算，Streamlit 负责交互和结果展示。用户可上传数据，也可使用内置的模拟销售数据体验分析流程。
 
-## 在线 Demo
+[在线演示](https://data-analysis-agent-h.streamlit.app) · [技术设计](docs/DESIGN.md) · [评测说明](docs/EVAL.md)
 
-<https://data-analysis-agent-h.streamlit.app>
+## 主要功能
 
-内置示例数据，打开就能用。
+| 功能 | 实现范围 |
+| --- | --- |
+| 数据读取与探索 | 支持 CSV、TSV、XLSX，查看字段类型、缺失值、描述性统计、频数及相关性 |
+| 分组与多维汇总 | 支持最多 3 个分组字段、6 个指标，以及整体汇总和 Top N；区分行数、非缺失数、去重数与数量求和 |
+| 条件筛选 | 支持最多 8 个条件的单层 AND / OR 组合，以及显式日期解析 |
+| 趋势与可视化 | 按日、周、月、季度汇总；支持柱状图、折线图、直方图、散点图和箱线图 |
+| 只读 SQL | 对固定工具难以表达的查询，使用内存 SQLite 执行单条 SELECT，支持窗口函数、CASE WHEN 与子查询 |
+| 数据清洗 | 支持删除重复行、删除缺失行、中位数或众数填充；对话清洗先预览，再由用户确认应用 |
+| 结果导出与追踪 | 下载结果表、清洗后的数据和图表，查看工具参数、执行结果、耗时及 Token 用量 |
 
-## 功能介绍
+除自然语言对话外，应用提供离线分析、多维汇总与手工清洗页面，无需配置 API 即可使用。销售场景下可加载业务口径提示，辅助区分订单数量、订单编号与数据行数。
 
-目前支持以下功能：
+## 实现方式
 
-- **数据上传**：读取 CSV、TSV 和 Excel 文件，查看字段类型、缺失值及数据概况。
-- **探索性分析**：描述性统计、频数统计、条件筛选、分组聚合和相关性分析。
-- **多维多指标汇总**：最多按 3 个字段分组、同时计算 6 个指标，明确区分行数、非缺失数、去重数、数量求和；支持整体汇总和 Top N。
-- **组合筛选**：最多 8 个条件的 AND / OR 组合，支持显式日期解析；可用于汇总、频数、趋势和图表。
-- **业务口径提示**：自动识别或手动选择销售场景，提示订单数量、订单编号、记录行数等口径区别；规则可在侧栏查看。
-- **运行观测**：展示每轮耗时、工具耗时、模型请求次数、Token 用量与估算成本，支持运行记录 JSON 及 Langfuse / OpenTelemetry 格式追踪导出。
-- **SQL 查询**：当固定工具无法表达时（窗口函数、CASE WHEN、子查询等），可提交只读 SQL（内存 SQLite，仅单条 SELECT，结果有上限）。
-- **数据可视化**：根据分析需求生成柱状图、折线图、直方图、散点图和箱线图。
-- **趋势分析**：识别日期字段，支持按日、周、月、季度聚合数据并生成趋势图。
-- **数据清洗**：通过自然语言提出清洗需求，预览处理结果，经用户确认后应用修改。
-- **结果导出**：下载分析结果、清洗后的数据及生成的图表。
+### 工具调用流程
 
-项目内置了一份模拟销售数据，可以直接用于测试。
+项目封装了 10 个工具，涵盖数据概况、缺失值统计、频数统计、分组聚合、相关性分析、绘图、清洗预览、时间趋势、多维汇总与 SQL 查询。模型根据当前数据 Schema 生成工具调用，参数经 Pydantic 校验后执行，结果回传模型用于后续分析或生成回复。
 
-## 技术实现
-
-主要使用的技术：
-
-- Python
-- DeepSeek API / Function Calling
-- Pandas
-- Pydantic
-- Matplotlib / Seaborn
-- Streamlit
-
-### Agent 工作流程
-
-Agent 采用基于工具调用的实现方式，模型负责理解用户需求和选择工具，具体的数据处理任务由本地 Python 函数完成。
-
-```text
-用户输入
-   ↓
-Streamlit 交互界面
-   ↓
-DeepSeek API
-   ↓
-Function Calling（工具选择与参数生成）
-   ↓
-Pydantic 参数校验
-   ↓
-Pandas 数据处理 / 统计分析
-   ↓
-返回分析结果
-   ↓
-Streamlit 展示表格、图表及文字回复
+```mermaid
+flowchart TD
+    A[用户问题与数据 Schema] --> B[模型选择工具与参数]
+    B --> C[Pydantic 参数校验]
+    C --> D[工具执行与结果反馈]
+    D --> B
+    B --> E[分析回复与结果展示]
 ```
 
-目前将数据分析能力封装为预定义工具，由 Agent 根据用户问题决定调用哪些工具及其参数。
+常见统计任务优先使用预定义工具，复杂查询通过只读 SQL 补充。单次请求最多进行 5 轮模型调用、10 次工具调用；历史对话按字符预算保留。工具执行失败时，错误信息回传模型，连续失败后追加纠错提示。
 
-没有开放任意 Python 代码执行接口，模型不能直接执行 `exec()` 或 `eval()`。数据清洗采用预览和确认机制，避免在用户不知情的情况下修改数据。
+### 数据修改与执行约束
 
-### 项目结构
+- **参数校验**：工具参数由 Pydantic 定义，限制字段、类型、枚举值及关联条件，拒绝未知工具和非法参数。
+- **清洗确认**：模型只能生成清洗预览。用户确认前复核数据版本与预览统计，防止在已变更的数据上应用旧提案。
+- **只读查询**：SQL 在内存数据库中执行，启用只读模式，并限制语句类型、返回行数及执行指令预算。
+- **执行范围**：未开放任意 Python 代码执行接口；分析计算由预定义函数和受限 SQL 完成。
 
-```text
-data-analysis-agent/
-├── app_streamlit.py
-├── core/
-│   ├── agent.py            # 模型调用与工具执行流程
-│   ├── tools.py            # Pandas 数据分析工具
-│   ├── aggregation.py      # 多维多指标汇总与统计口径
-│   ├── profiles.py         # 业务场景识别与动态提示词
-│   ├── schemas.py          # 参数校验和工具定义
-│   ├── dataset.py          # 数据读取与管理
-│   ├── cleaning.py         # 数据清洗与确认
-│   ├── trends.py           # 时间趋势分析
-│   ├── visualization.py    # 图表生成
-│   ├── sql.py              # 只读 SQL 工具
-│   └── observability.py    # 成本估算与追踪导出
-├── scripts/
-│   └── check_deepseek.py   # DeepSeek API 测试
-├── sample_data/
-│   └── sales_demo.csv
-├── tests/                  # 自动化测试
-├── evals/                  # 端到端评测任务集与评分器
-├── docs/                   # 设计说明与验收文档
-├── .env.example
-├── requirements.txt
-├── LICENSE
-└── NOTICE.md
-```
+### 运行记录
+
+每轮对话记录模型请求次数、工具参数与结果、执行耗时、Token 用量和按配置单价估算的成本，支持下载 JSON 供复核。Token 用量缺失或仅部分返回时会标明状态，估算成本不作为实际账单。
+
+项目还提供参考 Langfuse / OpenTelemetry 结构的追踪导出，当前未集成对应 SDK 或自动上报服务。
 
 ## 快速开始
 
-### 1. 安装依赖
+项目已在 Python 3.14 环境下运行。依赖列表见 [requirements.txt](requirements.txt)。
 
-项目已在本地 Python 3.14 环境下运行。
+### 1. 获取代码并安装依赖
 
 ```bash
-git clone https://github.com/<your-username>/data-analysis-agent.git
+git clone https://github.com/ShiqiHuang-02/data-analysis-agent.git
 cd data-analysis-agent
 
 python3 -m venv .venv
 source .venv/bin/activate
-
 python -m pip install -r requirements.txt
 ```
 
-Windows 用户需要使用对应的虚拟环境激活命令。
+Windows PowerShell 用户使用 `.venv\Scripts\Activate.ps1` 激活虚拟环境。
 
-### 2. 配置 DeepSeek API
+### 2. 配置模型服务
 
-在项目根目录创建 `.env` 文件：
+复制配置模板：
 
 ```bash
 cp .env.example .env
 ```
 
-打开 `.env`，填写自己的 DeepSeek API Key，并按照 `.env.example` 配置模型名称及 API 地址。
+在 `.env` 中填写 `DEEPSEEK_API_KEY`，并根据所用服务配置 `DEEPSEEK_MODEL` 与 `DEEPSEEK_BASE_URL`。API Key 可在 [DeepSeek 开放平台](https://platform.deepseek.com/) 获取。包含真实密钥的 `.env` 文件不应提交至仓库。
 
-API Key 可以从 [DeepSeek 开放平台](https://platform.deepseek.com/) 获取。
-
-不要将包含真实密钥的 `.env` 文件提交到 GitHub。
-
-### 3. 启动项目
+### 3. 启动应用
 
 ```bash
 python -m streamlit run app_streamlit.py
 ```
 
-启动后访问：
-
-http://localhost:8501
-
-如果没有配置 API Key，也可以使用离线分析和手工数据清洗功能。
+打开终端提示的地址，默认是 [http://localhost:8501](http://localhost:8501)。未配置 API Key 时，仍可使用离线分析和手工清洗功能。
 
 ## 使用示例
 
-可以上传自己的数据，也可以使用项目提供的 `sales_demo.csv`。
+以下问题适用于内置的 [sales_demo.csv](sample_data/sales_demo.csv)：
 
-以下是一些可以直接输入的分析指令。
+| 任务 | 自然语言示例 |
+| --- | --- |
+| 数据探索 | 总结这份数据的字段类型、数据量和缺失情况。 |
+| 多维汇总 | 按地区和渠道统计销售额总和、订单数总和与平均客户满意度，按销售额降序排列。 |
+| 条件筛选 | 筛选地区为华北且销售额大于 100 的记录，按渠道汇总销售额。 |
+| 时间趋势 | 按月汇总销售额，并绘制趋势图。 |
+| 数据清洗 | 使用中位数填充客户满意度这一列的缺失值。 |
 
-**数据概况**
+分析结果及工具执行记录可在对话页面查看。清洗任务需确认后才会修改当前数据，也可取消操作或恢复原始数据。
 
-> 总结这份数据的基本情况，包括字段类型和缺失值情况。
+示例数据中的“订单数”是数量字段，其总和与数据行数含义不同。多维汇总结果附有指标定义、有效记录数和截断说明，便于核对统计口径。
 
-**分组统计**
+## 测试与评测
 
-> 按照地区统计销售额总和，并按照销售额从高到低排序。
-
-**趋势分析**
-
-> 按月汇总销售额，并绘制销售额随时间变化的折线图。
-
-**多维多指标汇总**
-
-> 按地区和渠道，统计销售额总和、订单数总和和平均客户满意度。按销售额总和降序。
-
-**组合筛选**
-
-> 筛选地区为华北且销售额大于 100 的记录，按渠道汇总销售额与订单数。
-
-> 筛选日期在 2026-01-01（含）到 2026-02-01（不含）的记录，统计销售额总和。
-
-无需 API 时可在「多维汇总」页面选择分组、指标和筛选条件。结果附有指标定义、有效记录数和截断说明，便于与 Agent 的执行结果交叉核对。订单数列求和与数据行数并不相同；此示例不把每行视为一张订单。
-
-**数据清洗**
-
-> 使用中位数填充客户满意度这一列的缺失值。
-
-对于数据清洗任务，Agent 会先生成处理预览。用户确认后才会修改当前数据，也可以取消操作或恢复原始数据。
-
-## 测试
-
-项目使用 pytest 进行自动化测试，覆盖数据处理、趋势计算、参数校验、工具调用和数据清洗等功能。
+### 自动化测试
 
 ```bash
 python -m pytest -q
 ```
 
-测试包含工具计算、组合筛选、日期边界、缺失值口径、模拟模型错误反馈与修正、Token 缺失/部分返回以及 Streamlit 离线交互。Agent 流程测试使用模拟客户端，不代表真实模型的任务准确率。
+测试覆盖工具计算、组合筛选、日期边界、参数校验、清洗确认、上下文预算、错误反馈、运行统计及 Streamlit 离线交互。Agent 流程测试使用模拟客户端，不调用真实 API，也不代表真实模型的任务准确率。
 
-如果需要单独检查 DeepSeek API 和 Function Calling，可以运行：
+### 模型评测
 
-```bash
-python scripts/check_deepseek.py
-```
-
-此命令会发起实际 API 请求。
-
-## 评测
-
-项目附带一套端到端评测（`evals/`），用 44 条自然语言任务自动统计 Agent 的**工具路由准确率、结果准确率、任务完成率、幻觉率（启发式）、延迟与 Token 成本**。
+项目构建了 44 条自然语言任务，覆盖全部 10 个工具，以确定性工具结果作为参考答案，统计工具路由准确率、结果准确率、任务完成率、数字幻觉启发式指标、延迟与 Token 成本。
 
 ```bash
-python -m evals.runner --mock        # 自检评分器，不调用 API，应得 100%
-python -m evals.runner --limit 10    # 真实 API 试跑前 10 条
-python -m evals.runner               # 全量 44 条
-python -m evals.runner --repeat 3    # 重复 3 次取平均，降低路由随机性
+# 检查任务集与评分器，不调用 API
+python -m evals.runner --mock
+
+# 真实模型评测：先运行前 10 条，再运行全量任务
+python -m evals.runner --limit 10
+python -m evals.runner
+
+# 重复评测 3 次，汇总结果
+python -m evals.runner --repeat 3
 ```
 
-真实评测会调用 DeepSeek API 并产生费用；结果写入 `evals/results/`（已 gitignore），只保存聚合统计与工具参数/聚合结果，不含原始数据行。评测方法、指标定义与局限见 [docs/EVAL.md](docs/EVAL.md)。
+真实评测会调用 API 并产生费用，报告默认写入 `evals/results/`，该目录已被 Git 忽略。Mock 模式直接注入参考工具调用，仅验证任务集与评分器的一致性，不能作为模型性能结果。
 
-## 说明
+当前任务集基于单一模拟销售数据，尚不覆盖多轮对话和全部歧义场景；数字幻觉指标也可能误判。指标定义、评分规则与局限详见 [评测说明](docs/EVAL.md)。
 
-这是一个面向单用户、本地数据分析场景的个人项目，主要用于探索大语言模型与传统 Python 数据分析工具的结合方式。
+单独检查 API 连通性与 Function Calling 可运行 `python scripts/check_deepseek.py`，该命令同样会发起真实请求。
 
-目前更适合常见的结构化数据分析任务，不涉及复杂的数据仓库、多用户权限管理或生产环境部署。模型也可能选择不合适的工具或参数，因此分析结果仍需要根据实际数据进行核对。
+## 项目结构
 
-业务 Profile 是可查看的规则与提示词，不是模型训练，也不自动保证业务口径正确。当前筛选支持单层 AND / OR，不支持混合嵌套逻辑。Token 未返回时显示“未返回”，仅部分请求有用量时明确标注；不估算费用。运行记录由用户主动下载，不自动写入磁盘。
+| 路径 | 职责 |
+| --- | --- |
+| `app_streamlit.py` | 数据上传、对话、离线分析、清洗确认与结果导出 |
+| `core/agent.py` | 模型请求、工具调用循环、上下文预算与错误反馈 |
+| `core/schemas.py`、`core/tools.py` | 工具参数定义、校验与执行入口 |
+| `core/dataset.py`、`core/aggregation.py` | 数据读取、组合筛选与多维汇总 |
+| `core/cleaning.py` | 清洗提案确认与数据版本校验 |
+| `core/trends.py`、`core/visualization.py` | 时间聚合与图表生成 |
+| `core/sql.py` | 内存 SQLite 只读查询 |
+| `core/profiles.py`、`core/observability.py` | 业务口径提示、用量统计与追踪导出 |
+| `tests/`、`evals/` | 自动化测试、自然语言任务集与评分器 |
+| `sample_data/`、`docs/` | 模拟数据、设计说明与验收文档 |
 
-项目参考了 [quguolin/llm-data-agent](https://github.com/quguolin/llm-data-agent) 的产品目标和部分架构思路，采用独立实现的轻量化方案，并非直接 Fork 原仓库。相关说明见 [NOTICE.md](NOTICE.md)。
+## 适用范围与数据处理
+
+本项目面向单用户、单数据集的交互分析场景，输入限制为 15 MB、25 万行、150 列。当前未实现多用户权限管理、数据库连接管理或生产级资源隔离。趋势分析属于描述性统计，不包含预测模型。
+
+数据计算在应用运行环境中完成：本地启动时为本机，在线演示时为部署服务器。自然语言分析会向模型服务发送问题、选定的历史对话、数据 Schema 和工具返回结果；SQL 查询结果可能包含明细数据，频数或聚合结果也可能包含敏感信息。使用在线演示时请采用模拟或已脱敏数据。
+
+模型可能选择错误的工具、参数或业务口径。参数校验和业务提示有助于限制执行范围，但不能替代结果核对；单层 AND / OR 筛选不支持混合嵌套逻辑，复杂条件需通过 SQL 表达。
+
+## 项目来源与许可
+
+本项目参考 [quguolin/llm-data-agent](https://github.com/quguolin/llm-data-agent) 的产品目标与部分架构思路，采用独立实现，并非直接 Fork 原仓库。来源说明见 [NOTICE.md](NOTICE.md)，许可条款见 [LICENSE](LICENSE)。
