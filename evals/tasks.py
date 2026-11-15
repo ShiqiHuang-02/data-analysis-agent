@@ -221,4 +221,18 @@ TASKS: list[dict] = [
      "question": "用众数填充客户满意度这一列的缺失值。",
      "expected_tool": "clean_preview",
      "golden_args": {"operation": "fill_mode", "column": "客户满意度"}},
+
+    # ---------- sql_query ----------
+    {"id": "T042", "category": "sql_query",
+     "question": "用 SQL 统计每个地区的销售额总和，按销售额总和降序。",
+     "expected_tool": "sql_query",
+     "golden_args": {"query": 'SELECT 地区, SUM(销售额) AS 销售额总和 FROM data GROUP BY 地区 ORDER BY 销售额总和 DESC'}},
+    {"id": "T043", "category": "sql_query",
+     "question": "用 SQL 计算各渠道的记录数和平均客户满意度。",
+     "expected_tool": "sql_query",
+     "golden_args": {"query": 'SELECT 渠道, COUNT(*) AS 记录数, AVG(客户满意度) AS 平均满意度 FROM data GROUP BY 渠道'}},
+    {"id": "T044", "category": "sql_query",
+     "question": "用 SQL 找出销售额最高的 3 条记录的日期和销售额。",
+     "expected_tool": "sql_query",
+     "golden_args": {"query": 'SELECT 日期, 销售额 FROM data ORDER BY 销售额 DESC LIMIT 3'}},
 ]

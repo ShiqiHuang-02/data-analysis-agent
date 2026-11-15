@@ -2,7 +2,7 @@ Data Analysis Agent — local verification
 Date: 2026-11-15
 
 Command: python -m pytest -q --disable-warnings
-Result: 45 passed (1 warning: missing CJK plotting font)
+Result: 64 passed (1 warning: missing CJK plotting font)
 
 Verified offline:
 - CSV/XLSX loading, schema limits, descriptions, missingness and correlations
@@ -11,6 +11,9 @@ Verified offline:
 - AND/OR combined filters, explicit date-string parsing, missing/invalid exclusion
 - Business profile auto-detection and manual mode switch
 - Observability stats: round/tool timing, model request count, token usage, trace export
+- Observability: cost estimation, Langfuse/OpenTelemetry trace export
+- Read-only SQL tool: SELECT-only enforcement, multi-statement rejection, row cap
+- Context budget for history and reflection on repeated tool errors
 - Matplotlib PNG generation without LLM-supplied arbitrary executable code
 - Existing cleaning preview is read-only and requires explicit confirm to mutate
 - Stale cleaning proposal revision or forged preview is rejected

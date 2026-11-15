@@ -13,7 +13,8 @@
 - **多维多指标汇总**：最多按 3 个字段分组、同时计算 6 个指标，明确区分行数、非缺失数、去重数、数量求和；支持整体汇总和 Top N。
 - **组合筛选**：最多 8 个条件的 AND / OR 组合，支持显式日期解析；可用于汇总、频数、趋势和图表。
 - **业务口径提示**：自动识别或手动选择销售场景，提示订单数量、订单编号、记录行数等口径区别；规则可在侧栏查看。
-- **运行观测**：展示每轮耗时、工具耗时、模型请求次数与 API 实际返回的 Token 用量，支持运行记录 JSON 导出。
+- **运行观测**：展示每轮耗时、工具耗时、模型请求次数、Token 用量与估算成本，支持运行记录 JSON 及 Langfuse / OpenTelemetry 格式追踪导出。
+- **SQL 查询**：当固定工具无法表达时（窗口函数、CASE WHEN、子查询等），可提交只读 SQL（内存 SQLite，仅单条 SELECT，结果有上限）。
 - **数据可视化**：根据分析需求生成柱状图、折线图、直方图、散点图和箱线图。
 - **趋势分析**：识别日期字段，支持按日、周、月、季度聚合数据并生成趋势图。
 - **数据清洗**：通过自然语言提出清洗需求，预览处理结果，经用户确认后应用修改。
@@ -72,7 +73,9 @@ data-analysis-agent/
 │   ├── dataset.py          # 数据读取与管理
 │   ├── cleaning.py         # 数据清洗与确认
 │   ├── trends.py           # 时间趋势分析
-│   └── visualization.py    # 图表生成
+│   ├── visualization.py    # 图表生成
+│   ├── sql.py              # 只读 SQL 工具
+│   └── observability.py    # 成本估算与追踪导出
 ├── scripts/
 │   └── check_deepseek.py   # DeepSeek API 测试
 ├── sample_data/
@@ -186,12 +189,13 @@ python scripts/check_deepseek.py
 
 ## 评测
 
-项目附带一套端到端评测（`evals/`），用 41 条自然语言任务自动统计 Agent 的**工具路由准确率、结果准确率、任务完成率、幻觉率（启发式）、延迟与 Token 成本**。
+项目附带一套端到端评测（`evals/`），用 44 条自然语言任务自动统计 Agent 的**工具路由准确率、结果准确率、任务完成率、幻觉率（启发式）、延迟与 Token 成本**。
 
 ```bash
 python -m evals.runner --mock        # 自检评分器，不调用 API，应得 100%
 python -m evals.runner --limit 10    # 真实 API 试跑前 10 条
-python -m evals.runner               # 全量 41 条
+python -m evals.runner               # 全量 44 条
+python -m evals.runner --repeat 3    # 重复 3 次取平均，降低路由随机性
 ```
 
 真实评测会调用 DeepSeek API 并产生费用；结果写入 `evals/results/`（已 gitignore），只保存聚合统计与工具参数/聚合结果，不含原始数据行。评测方法、指标定义与局限见 [docs/EVAL.md](docs/EVAL.md)。

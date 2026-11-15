@@ -55,6 +55,13 @@ def test_results_match_detects_wrong_values(ds):
     assert not results_match(golden, wrong, "group_aggregate")
 
 
+def test_sql_grading_ignores_aliases(ds):
+    golden = run_tool(ds, "sql_query", {"query": 'SELECT 地区, SUM(销售额) AS s FROM data GROUP BY 地区'})
+    agent = run_tool(ds, "sql_query",
+                     {"query": 'SELECT 地区, SUM(销售额) AS 总额 FROM data GROUP BY 地区 ORDER BY 总额 DESC'})
+    assert results_match(golden, agent, "sql_query")
+
+
 def test_estimate_cost():
     assert estimate_cost("deepseek-chat", 1_000_000, 500_000) == pytest.approx(6.0)  # 1M*2 + 0.5M*8
     assert estimate_cost("unknown-model", 1_000_000, 500_000) is None

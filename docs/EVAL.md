@@ -4,11 +4,11 @@
 
 ## 为什么要有评测
 
-Agent 的"聪明"体现在两个环节：**（1）选对工具和参数（路由）**，**（2）数值答对**。Pandas 计算是确定性的（已被 45 个 pytest 覆盖），但模型选错工具或参数时，Pandas 会算出一个"逻辑上正确、但答非所问"的结果。单靠单测测不到这条链路，所以需要端到端评测。
+Agent 的"聪明"体现在两个环节：**（1）选对工具和参数（路由）**，**（2）数值答对**。Pandas 计算是确定性的（已被 64 个 pytest 覆盖），但模型选错工具或参数时，Pandas 会算出一个"逻辑上正确、但答非所问"的结果。单靠单测测不到这条链路，所以需要端到端评测。
 
 ## 任务集设计
 
-`evals/tasks.py` 里 41 条任务覆盖全部 9 个工具，每条含：
+`evals/tasks.py` 里 44 条任务覆盖全部 10 个工具，每条含：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -18,12 +18,12 @@ Agent 的"聪明"体现在两个环节：**（1）选对工具和参数（路由
 
 黄金结果 = `run_tool(ds, expected_tool, golden_args)`，在运行时本地计算，不需要手写数值。
 
-分布：overview 3、missing 1、value_counts 4、group_aggregate 6、correlation 2、time_trend 5、aggregate_table 10、make_chart 6、clean_preview 4。
+分布：overview 3、missing 1、value_counts 4、group_aggregate 6、correlation 2、time_trend 5、aggregate_table 10、make_chart 6、clean_preview 4、sql_query 3。
 
 ### 评分规则
 
 - **路由准确（routing_ok）**：Agent 的工具调用序列里出现过 `expected_tool`。
-- **结果准确（result_ok）**：Agent 对 `expected_tool` 的某次成功调用，其返回结果与黄金结果**语义等价**。比较时会对表格做行排序、对浮点四舍五入到 4 位小数；`aggregate_table` 比较的是**指标数值**而非模型自定的指标名（同一个"销售额求和"起什么名字不影响正确性）。
+- **结果准确（result_ok）**：Agent 对 `expected_tool` 的某次成功调用，其返回结果与黄金结果**语义等价**。比较时会对表格做行排序、对浮点四舍五入到 4 位小数；`aggregate_table` 比较的是**指标数值**而非模型自定的指标名（同一个"销售额求和"起什么名字不影响正确性）；`sql_query` 比较的是**数值行**而非列别名（同一个"求和"起什么别名不影响正确性）。
 
 ## 指标定义
 
@@ -51,8 +51,11 @@ mock 模式直接把黄金工具调用注入评分器，**应得 100%**。它只
 # 先在前 10 条上试跑，确认 API 正常
 python -m evals.runner --limit 10
 
-# 全量 41 条
+# 全量 44 条
 python -m evals.runner
+
+# 重复 3 次取平均，降低路由随机性
+python -m evals.runner --repeat 3
 
 # 换模型对比（模型选型 vs 成本）
 python -m evals.runner --model deepseek-chat
@@ -71,10 +74,10 @@ python -m evals.runner --data path/to/your.csv
 
 ## 局限（如实声明）
 
-- **不是大样本**：41 条任务、单一数据源，只能反映「在这份销售数据上的路由表现」，不能推广到任意数据。
+- **不是大样本**：44 条任务、单一数据源，只能反映「在这份销售数据上的路由表现」，不能推广到任意数据。
 - **路由不稳定**：大模型对同一问题可能给出不同工具选择，单次结果有噪声；应多次运行取平均，并区分「选错工具（路由错）」与「参数错（结果错）」。
 - **幻觉率是启发式**：只做「数字是否出现在工具结果里」的粗查，有假阳性（如回答复述了问题里的数字）和假阴性（如编造了工具结果里恰好也有的数字）。
-- **成本是估算**：单价来自 `evals/runner.py` 顶部的 `PRICE_CNY_PER_1M`（缓存未命中价），未计缓存命中折扣与峰谷差异，运行前请按 [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing) 核对。
+- **成本是估算**：单价来自 `core/observability.py` 的 `PRICE_CNY_PER_1M`（缓存未命中价），未计缓存命中折扣与峰谷差异，运行前请按 [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing) 核对。
 - **不测清洗的"确认"链路**：`clean_preview` 是只读预览，真实数据变更需用户在 UI 确认，这部分仍由 `tests/test_completion.py` 的单测覆盖。
 
 ## 下一步（可选）

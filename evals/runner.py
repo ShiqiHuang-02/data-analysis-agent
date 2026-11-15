@@ -71,6 +71,18 @@ def _canonical_aggregate(table: list[dict], group_by: list[str], result: dict) -
             "total_groups": result.get("total_groups")}
 
 
+def _canonical_sql(table: list[dict], result: dict) -> dict:
+    """SQL 结果比较数值行（忽略模型自定的列别名与列顺序）。"""
+    rows = []
+    for row in table:
+        vals = [_round(v) for v in row.values()]
+        vals.sort(key=lambda v: json.dumps(v, ensure_ascii=False, sort_keys=True, default=str))
+        rows.append(vals)
+    rows.sort(key=lambda r: json.dumps(r, ensure_ascii=False, sort_keys=True, default=str))
+    return {"row_count": result.get("row_count"), "rows": rows,
+            "truncated": result.get("truncated")}
+
+
 def canonicalize(result: dict, tool: str, group_by: list[str] | None = None) -> dict:
     """Reduce a tool result to the part that determines correctness."""
     if not isinstance(result, dict) or result.get("status") != "ok":
@@ -92,6 +104,8 @@ def canonicalize(result: dict, tool: str, group_by: list[str] | None = None) -> 
                 "row_count": result.get("row_count")}
     if tool == "aggregate_table":
         return _canonical_aggregate(table, group_by or [], result)
+    if tool == "sql_query":
+        return _canonical_sql(table, result)
     return {"table": _sorted_table(table)}
 
 
@@ -159,6 +173,7 @@ def aggregate(scores: list[dict]) -> dict:
     cost = 0.0
     latencies: list[float] = []
     model = None
+    by_category: dict[str, dict] = {}
     for s in scores:
         st = s["stats"]
         model = model or st.get("model")
@@ -170,14 +185,23 @@ def aggregate(scores: list[dict]) -> dict:
         c = estimate_cost(model, st.get("prompt_tokens"), st.get("completion_tokens"))
         if c is not None:
             cost += c
+        cat = by_category.setdefault(s["category"], {"n": 0, "routing": 0, "result": 0})
+        cat["n"] += 1
+        cat["routing"] += s["routing_ok"]
+        cat["result"] += s["result_ok"]
+    category = {c: {"n": v["n"], "routing_accuracy": v["routing"] / v["n"],
+                    "result_accuracy": v["result"] / v["n"]}
+                for c, v in sorted(by_category.items())}
     return {
-        "n_tasks": len(scores), "model": model,
+        "n_runs": len(scores), "n_unique_tasks": len({s["id"] for s in scores}),
+        "model": model,
         "routing_accuracy": routing / n,
         "result_accuracy": result / n,
         "completion_rate": complete / n,
         "hallucination_rate": hallucinated / n,
         "mean_latency_ms": (sum(latencies) / n) if latencies else 0.0,
         "tokens": tokens, "estimated_cost_cny": round(cost, 6),
+        "by_category": category,
     }
 
 
@@ -223,10 +247,13 @@ def print_report(scores: list[dict], agg: dict, note: str = "") -> None:
         r = "✓" if s["routing_ok"] else "✗"
         v = "✓" if s["result_ok"] else "✗"
         hall = f" 幻觉={s['hallucinated']}" if s["hallucinated"] else ""
-        print(f"{s['id']:>4} 路由{r} 结果{v}  {s['expected_tool']:<16} "
+        run = f"[run{s['run']}] " if s.get("run") else ""
+        print(f"{run}{s['id']:>4} 路由{r} 结果{v}  {s['expected_tool']:<16} "
               f"{'/'.join(s['tools_called']) or '—':<32} {s['question'][:24]}{hall}")
+    runs, uniq = agg["n_runs"], agg["n_unique_tasks"]
+    task_label = f"{uniq}（运行 {runs} 次）" if runs != uniq else f"{uniq}"
     print("\n== 汇总 ==")
-    print(f"任务数        {agg['n_tasks']}")
+    print(f"任务数        {task_label}")
     print(f"模型          {agg['model']}")
     print(f"工具路由准确率 {agg['routing_accuracy']:.1%}")
     print(f"结果准确率    {agg['result_accuracy']:.1%}")
@@ -235,6 +262,9 @@ def print_report(scores: list[dict], agg: dict, note: str = "") -> None:
     print(f"平均耗时      {agg['mean_latency_ms']:.0f} ms")
     print(f"Token         {agg['tokens']['total']:,}（输入 {agg['tokens']['prompt']:,} / 输出 {agg['tokens']['completion']:,}）")
     print(f"估算成本      ¥{agg['estimated_cost_cny']:.4f}（按配置单价，缓存命中未计入，见 docs/EVAL.md）")
+    print("\n== 按工具分类 ==")
+    for c, v in agg["by_category"].items():
+        print(f"{c:<16} n={v['n']:>2}  路由 {v['routing_accuracy']:.0%}  结果 {v['result_accuracy']:.0%}")
     if note:
         print(f"\n{note}")
 
@@ -270,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", default=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))
     p.add_argument("--profile-mode", default="auto", choices=["auto", "general", "sales"])
     p.add_argument("--data", default=None, help="数据文件路径（默认 sample_data/sales_demo.csv）")
+    p.add_argument("--repeat", type=int, default=1, help="重复运行次数（>1 时多次运行取平均，降低路由随机性）")
     p.add_argument("--output", default=None, help="结果输出目录（默认 evals/results/）")
     args = p.parse_args(argv)
 
@@ -282,7 +313,14 @@ def main(argv: list[str] | None = None) -> int:
         note = "mock 模式：直接注入黄金工具调用，只验证评分器与任务集自洽，不代表真实模型表现。"
     else:
         client = build_client()
-        scores = run_eval(tasks, ds, client, args.model, args.profile_mode)
+        scores = []
+        for run_i in range(args.repeat):
+            if args.repeat > 1:
+                print(f"\n== 第 {run_i + 1}/{args.repeat} 轮 ==", file=sys.stderr)
+            batch = run_eval(tasks, ds, client, args.model, args.profile_mode)
+            for s in batch:
+                s["run"] = run_i + 1
+            scores.extend(batch)
         agg = aggregate(scores)
         note = "真实模型结果；工具路由可能不稳定，建议多次运行取平均，不要把单次结果当成稳定结论。"
 
