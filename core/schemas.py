@@ -134,6 +134,11 @@ class CleanPreviewArgs(StrictArgs):
         return self
 
 
+class SqlArgs(StrictArgs):
+    query: str = Field(min_length=1, max_length=4000)
+    max_rows: int = Field(default=50, ge=1, le=200)
+
+
 TOOL_SCHEMAS = {
     "overview": OverviewArgs,
     "missing_values": MissingArgs,
@@ -144,6 +149,7 @@ TOOL_SCHEMAS = {
     "clean_preview": CleanPreviewArgs,
     "time_trend": TrendArgs,
     "aggregate_table": AggregateTableArgs,
+    "sql_query": SqlArgs,
 }
 
 TOOL_DESCRIPTIONS = {
@@ -156,6 +162,7 @@ TOOL_DESCRIPTIONS = {
     "clean_preview": "When user asks to clean/modify data, preview a specified cleaning operation and show changed row/missing counts. User must confirm in chat before the dataset changes.",
     "time_trend": "Time series descriptive analysis. Parse the date column, aggregate by day/week/month/quarter in chronological order, and return a line chart. Unlike basic make_chart(line), this understands dates. Does not forecast.",
     "aggregate_table": "Compute up to 6 named metrics grouped by 0-3 columns, with AND/OR filters. Empty group_by gives overall totals. row_count counts rows; count counts non-null values; nunique counts distinct non-null IDs; sum sums a numeric quantity (e.g. an existing order-count column). mean/median/min/max require numeric columns. All-missing sum is null. sort_by is a metric name; results may be truncated to top_n. Date-string filters require value_type=datetime. Do not invent business definitions; ask when ambiguous.",
+    "sql_query": "Run a single read-only SELECT against the uploaded data, stored as an in-memory SQLite table named 'data' whose columns are exactly the current dataset columns. Use ONLY when the fixed tools cannot express the analysis (window functions, CASE WHEN, complex subqueries, percentile). Quote Chinese or non-ASCII column names with double quotes. Only one SELECT statement is allowed and results are capped; writes are impossible.",
 }
 
 

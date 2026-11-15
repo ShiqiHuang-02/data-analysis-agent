@@ -10,6 +10,7 @@ from core.dataset import Dataset
 from core.schemas import TOOL_SCHEMAS
 from core.trends import summarize_trend
 from core.aggregation import aggregate_table
+from core.sql import sql_query
 
 
 def _safe(value: Any) -> Any:
@@ -159,6 +160,7 @@ FUNCTIONS = {
     "clean_preview": clean_preview,
     "time_trend": summarize_trend,
     "aggregate_table": aggregate_table,
+    "sql_query": sql_query,
 }
 
 

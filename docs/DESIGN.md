@@ -16,6 +16,8 @@
 | `core/trends.py` | 日期聚合 | `pd.to_datetime` 解析、`Period` 时间粒度、时间排序、无效日期计数、不凭空补零 |
 | `core/cleaning.py` | 提案确认 | 模型只能提出 `clean_preview`；数据版本号及预览统计校验后，用户确认才改变数据 |
 | `core/visualization.py` | 输出图表 | Matplotlib + Seaborn 只接受受校验的图表规格，在本地绘图 |
+| `core/sql.py` | 只读 SQL | 内存 SQLite + `query_only`、仅单条 SELECT、行数与复杂度上限 |
+| `core/observability.py` | 成本与追踪 | 单价估算、Langfuse/OpenTelemetry 追踪导出（纯 dict，不引入 SDK） |
 | `app_streamlit.py` | 交互展示 | 数据上传、会话、结果复核、图表导出、清洗确认/恢复 |
 
 ## 核心数据流程
@@ -64,6 +66,20 @@ Streamlit 显示数据、工具记录和结论
 自动模式仅在金额字段与订单字段同时命中预定义名称时加载销售规则；用户可强制通用/销售模式，界面显示实际规则及选择原因。销售规则要求区分订单数求和、订单编号去重与行数，不能确定数据粒度时先询问。规则是提示词约束，不能替代结果评测。
 
 `AgentResult.stats` 保存轮次级耗时、模型请求次数/耗时、工具执行数、工具错误数、停止原因与 Token 用量；每条 trace 含工具耗时。Token 仅累计完整返回 prompt/completion/total 三项的响应，并标记 complete/partial/unavailable；未返回时为 null，避免把未知误报为零。模型异常保留此前已完成的 trace 与用量。耗时不含 UI 绘图，模型请求次数按 SDK 调用计数（内部重试不单独计次），JSON 可由用户下载复盘。
+
+## Text-to-SQL 与工具白名单的取舍
+
+新增只读 `sql_query` 工具：模型写 SQL 而非调用固定工具，在内存 SQLite（`query_only=ON`）上执行，只允许单条 SELECT，结果有行数与复杂度上限。表名固定为 `data`，列名与当前 Schema 一致。
+
+| 维度 | 工具白名单 | Text-to-SQL |
+| --- | --- | --- |
+| 灵活度 | 只能做预设运算 | 窗口函数 / CASE WHEN / 子查询等任意 SELECT |
+| 安全 | 参数经 Pydantic 强校验，无代码执行 | 只读 + 单条 SELECT，仍可能写出高开销查询（有指令预算中断） |
+| 可复核 | 结果带指标口径与说明 | 结果就是 SQL 查询结果，UI 需展示 SQL 便于核对 |
+| 口径 | 显式区分 row_count/count/nunique/sum | 口径完全由模型写的 SQL 决定，更易混淆 |
+| 适用 | 常见统计、趋势、清洗 | 固定工具表达不了的复杂分析 |
+
+结论：**固定工具优先，SQL 兜底**。固定工具把业务口径与缺失值语义固化、可解释可复核；SQL 只在固定工具表达不了时使用。两者都拒绝任意代码执行，且 SQL 无法写回数据。
 
 ## 面试答题提示
 
