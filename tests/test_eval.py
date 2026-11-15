@@ -2,10 +2,10 @@
 import pytest
 
 from core.dataset import Dataset
+from core.observability import estimate_cost
 from core.tools import run_tool
 from evals.runner import (
     canonicalize,
-    estimate_cost,
     results_match,
     aggregate,
     run_mock,
@@ -56,10 +56,9 @@ def test_results_match_detects_wrong_values(ds):
 
 
 def test_estimate_cost():
-    stats = {"prompt_tokens": 1_000_000, "completion_tokens": 500_000}
-    assert estimate_cost("deepseek-chat", stats) == pytest.approx(6.0)  # 1M*2 + 0.5M*8
-    assert estimate_cost("unknown-model", stats) is None
-    assert estimate_cost("deepseek-chat", {"prompt_tokens": None, "completion_tokens": None}) is None
+    assert estimate_cost("deepseek-chat", 1_000_000, 500_000) == pytest.approx(6.0)  # 1M*2 + 0.5M*8
+    assert estimate_cost("unknown-model", 1_000_000, 500_000) is None
+    assert estimate_cost("deepseek-chat", None, None) is None
 
 
 def test_hallucinated_numbers_flags_absent_numbers():

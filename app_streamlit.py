@@ -6,6 +6,7 @@ from pathlib import Path
 import hashlib
 import json
 import os
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 from core.dataset import Dataset
 from core.agent import run_agent
 from core.cleaning import proposal_from_trace, confirm_proposal
+from core.observability import to_langfuse_trace, to_otlp_spans
 from core.schemas import TOOL_SCHEMAS
 from core.tools import compute_clean, run_tool
 from core.visualization import build_chart
@@ -134,20 +136,32 @@ def render_result(result: dict, *, key: str):
         st.caption(f"统计基于本地 Pandas 执行；当前数据行数：{len(st.session_state['dataset'].df):,}")
 
 
-def render_run_stats(stats: dict, trace: list, *, key: str):
+def render_run_stats(stats: dict, trace: list, *, key: str, answer: str = ""):
     if not stats:
         return
     token_label = "未返回" if stats["total_tokens"] is None else f"{stats['total_tokens']:,}"
     if stats["usage_status"] == "partial":
         token_label += "（部分请求）"
+    cost = stats.get("estimated_cost_cny")
+    cost_label = "未估算" if cost is None else f"¥{cost:.4f}"
     st.caption(f"本轮耗时 {stats['elapsed_ms'] / 1000:.2f} 秒 · 模型请求 {stats['model_requests']} 次 · "
-               f"工具执行 {stats['tools_executed']} 次 · Token {token_label}")
+               f"工具执行 {stats['tools_executed']} 次 · Token {token_label} · 成本 {cost_label}")
     with st.expander("运行统计与记录导出"):
         st.json(stats)
-        st.caption("Token 按 API 实际返回累计；未返回或部分返回会明确标注。耗时不含后续界面绘图，SDK 内部重试计入单次请求耗时。记录包含问题相关参数及聚合结果，分享前请检查。")
+        st.caption("Token 按 API 实际返回累计；成本按配置单价估算（缓存命中未计入，见 docs/EVAL.md）。耗时不含后续界面绘图，SDK 内部重试计入单次请求耗时。记录包含问题相关参数及聚合结果，分享前请检查。")
         st.download_button("下载本轮运行记录 JSON",
                            json.dumps({"stats": stats, "trace": trace}, ensure_ascii=False, indent=2, default=str),
                            file_name="agent_run.json", mime="application/json", key=f"run_{key}")
+        result_like = SimpleNamespace(stats=stats, trace=trace, answer=answer)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.download_button("下载 Langfuse 格式追踪",
+                               json.dumps(to_langfuse_trace(result_like), ensure_ascii=False, indent=2, default=str),
+                               file_name="agent_trace_langfuse.json", mime="application/json", key=f"lf_{key}")
+        with c2:
+            st.download_button("下载 OpenTelemetry 格式追踪",
+                               json.dumps(to_otlp_spans(result_like), ensure_ascii=False, indent=2, default=str),
+                               file_name="agent_trace_otlp.json", mime="application/json", key=f"ot_{key}")
 
 
 ds, selected_model, selected_profile = load_data()
@@ -172,7 +186,7 @@ with chat_tab:
                         st.caption(f"工具耗时：{entry.get('duration_ms', 0):.2f} ms")
                         render_result(entry["result"], key=f"history_{i}_{j}")
             if item["role"] == "assistant":
-                render_run_stats(item.get("stats", {}), item.get("trace", []), key=f"history_{i}")
+                render_run_stats(item.get("stats", {}), item.get("trace", []), key=f"history_{i}", answer=item["content"])
     question = st.chat_input("用自然语言问这份数据...")
     if question:
         previous = [{"role": m["role"], "content": m["content"]} for m in st.session_state["messages"]]
@@ -189,7 +203,7 @@ with chat_tab:
                         st.code(f"{entry['tool']}({entry['arguments']})", language="python")
                         st.caption(f"工具耗时：{entry.get('duration_ms', 0):.2f} ms")
                         render_result(entry["result"], key=f"new_{len(previous)}_{j}")
-            render_run_stats(result.stats, result.trace, key=f"new_{len(previous)}")
+            render_run_stats(result.stats, result.trace, key=f"new_{len(previous)}", answer=result.answer)
         st.session_state["messages"].append({"role": "assistant", "content": result.answer,
                                               "trace": result.trace, "stats": result.stats})
         proposal = proposal_from_trace(result.trace, st.session_state["dataset_revision"])

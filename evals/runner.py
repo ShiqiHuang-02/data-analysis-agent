@@ -23,18 +23,9 @@ from types import SimpleNamespace
 from typing import Any
 
 from core.agent import run_agent
+from core.observability import estimate_cost
 from core.tools import run_tool
 from evals.tasks import TASKS, load_dataset
-
-# 单位：元 / 百万 tokens（输入为缓存未命中价）。价格变动频繁，运行前请核对：
-# https://api-docs.deepseek.com/quick_start/pricing
-PRICE_CNY_PER_1M: dict[str, dict[str, float]] = {
-    "deepseek-chat": {"input": 2.0, "output": 8.0},
-    "deepseek-reasoner": {"input": 4.0, "output": 16.0},
-    "deepseek-flash": {"input": 1.0, "output": 2.0},
-    "deepseek-v4-flash": {"input": 1.0, "output": 2.0},
-    "deepseek-v4-pro": {"input": 3.0, "output": 6.0},
-}
 
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -139,17 +130,6 @@ def hallucinated_numbers(answer: str, trace: list[dict]) -> list[float]:
     return out
 
 
-def estimate_cost(model: str | None, stats: dict) -> float | None:
-    """按配置单价估算本轮成本（元）。Token 未返回或模型未知时返回 None。"""
-    prompt, completion = stats.get("prompt_tokens"), stats.get("completion_tokens")
-    if prompt is None or completion is None or model is None:
-        return None
-    price = PRICE_CNY_PER_1M.get(model)
-    if price is None:
-        return None
-    return (prompt * price["input"] + completion * price["output"]) / 1_000_000
-
-
 def grade_task(task: dict, agent_result: Any, golden: dict) -> dict:
     tools = [t["tool"] for t in agent_result.trace]
     routing_ok = task["expected_tool"] in tools
@@ -187,7 +167,7 @@ def aggregate(scores: list[dict]) -> dict:
             tokens["total"] += st["total_tokens"]
             tokens["prompt"] += st.get("prompt_tokens", 0)
             tokens["completion"] += st.get("completion_tokens", 0)
-        c = estimate_cost(model, st)
+        c = estimate_cost(model, st.get("prompt_tokens"), st.get("completion_tokens"))
         if c is not None:
             cost += c
     return {

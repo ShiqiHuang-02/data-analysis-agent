@@ -13,6 +13,7 @@ from core.dataset import Dataset
 from core.schemas import function_specs, TOOL_SCHEMAS
 from core.tools import run_tool
 from core.profiles import resolve_profile
+from core.observability import estimate_cost
 
 SYSTEM_PROMPT = """你是专业数据分析助手。你必须基于工具返回的实际数据作答，不能编造数值。
 用户上传的数据只在本地分析；你会看到列名、类型、缺失数和部分工具的聚合结果。
@@ -68,6 +69,9 @@ def run_agent(question: str, ds: Dataset, history: list[dict] | None = None,
         if not reported:
             for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
                 stats[key] = None
+        stats["estimated_cost_cny"] = estimate_cost(stats["model"],
+                                                    stats["prompt_tokens"],
+                                                    stats["completion_tokens"])
         return AgentResult(answer, trace, stats)
 
     if first_tool is not None and first_tool not in TOOL_SCHEMAS:
