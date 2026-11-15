@@ -8,16 +8,7 @@
 
 <https://data-analysis-agent-h.streamlit.app>
 
-部署在 Streamlit Community Cloud 上，内置了示例销售数据，打开就能用。不配 API Key 时离线分析、多维汇总、数据清洗都能用，配了 Key 才能聊天。
-
-想自己部署一份：到 [share.streamlit.io](https://share.streamlit.io/) 用 GitHub 登录 → New app → 仓库选 `ShiqiHuang-02/data-analysis-agent`，主文件填 `app_streamlit.py` → Deploy。要用聊天的话，在应用的 Settings → Secrets 里加：
-
-```toml
-DEEPSEEK_API_KEY = "你的 Key"
-DEEPSEEK_MODEL = "deepseek-chat"
-```
-
-公开 demo 里别放真实 Key，访客能直接用你的额度。
+内置示例数据，打开就能用。
 
 ## 功能介绍
 
