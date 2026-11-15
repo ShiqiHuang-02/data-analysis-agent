@@ -6,11 +6,15 @@
 
 ## 在线 Demo
 
-本项目可直接部署到 [Streamlit Community Cloud](https://streamlit.io/cloud)（免费，连接 GitHub 仓库，无需服务器）。
+本项目已部署，可直接体验：
 
-[![部署到 Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+**在线体验：<https://data-analysis-agent-h.streamlit.app>**
 
-**部署步骤（约 2 分钟）：**
+[![在线体验](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://data-analysis-agent-h.streamlit.app)
+
+部署于 [Streamlit Community Cloud](https://streamlit.io/cloud)（免费）。内置销售示例数据，无需配置即可体验离线分析、多维汇总、数据清洗等功能。
+
+**重新部署 / 复刻（约 2 分钟）：**
 
 1. 打开 [share.streamlit.io](https://share.streamlit.io/)，用 GitHub 账号登录。
 2. 点 **New app**，仓库选 `ShiqiHuang-02/data-analysis-agent`，分支 `main`，主文件填 `app_streamlit.py`。
@@ -24,6 +28,8 @@ DEEPSEEK_MODEL = "deepseek-chat"
 ```
 
 不配置 Key 也能用：内置销售示例数据，以及离线分析、多维汇总、数据清洗等功能均可用；配置后即可使用 Agent 自然语言对话。
+
+> ⚠️ 公开 demo 里放真实 Key，任何访客都能消耗你的额度；建议用「密码门」或专用小额 Key，或保持无 Key 的离线 demo。
 
 > 云端已通过 `packages.txt` 安装中文字体（Noto CJK），图表中文标签正常显示。
 
