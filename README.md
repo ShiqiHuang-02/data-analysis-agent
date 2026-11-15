@@ -78,6 +78,7 @@ data-analysis-agent/
 ├── sample_data/
 │   └── sales_demo.csv
 ├── tests/                  # 自动化测试
+├── evals/                  # 端到端评测任务集与评分器
 ├── docs/                   # 设计说明与验收文档
 ├── .env.example
 ├── requirements.txt
@@ -182,6 +183,18 @@ python scripts/check_deepseek.py
 ```
 
 此命令会发起实际 API 请求。
+
+## 评测
+
+项目附带一套端到端评测（`evals/`），用 41 条自然语言任务自动统计 Agent 的**工具路由准确率、结果准确率、任务完成率、幻觉率（启发式）、延迟与 Token 成本**。
+
+```bash
+python -m evals.runner --mock        # 自检评分器，不调用 API，应得 100%
+python -m evals.runner --limit 10    # 真实 API 试跑前 10 条
+python -m evals.runner               # 全量 41 条
+```
+
+真实评测会调用 DeepSeek API 并产生费用；结果写入 `evals/results/`（已 gitignore），只保存聚合统计与工具参数/聚合结果，不含原始数据行。评测方法、指标定义与局限见 [docs/EVAL.md](docs/EVAL.md)。
 
 ## 说明
 
