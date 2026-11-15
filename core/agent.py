@@ -32,6 +32,11 @@ SYSTEM_PROMPT = """你是专业数据分析助手。你必须基于工具返回�
 MAX_ROUNDS = 5
 MAX_TOTAL_TOOLS = 10
 MAX_TOOL_REPLY_CHARS = 6500
+MAX_HISTORY_TURNS = 6
+MAX_TURN_CHARS = 2500
+MAX_HISTORY_CHARS = 9000
+REFLECTION_THRESHOLD = 2
+REFLECTION_PROMPT = "前几次工具调用连续失败，请先分析失败原因（列名/类型/参数），调整后重试；若仍不确定，直接向用户说明并停止调用工具。"
 
 
 @dataclass
@@ -56,7 +61,7 @@ def run_agent(question: str, ds: Dataset, history: list[dict] | None = None,
     trace: list[dict] = []
     stats = {"model": model or os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
              "profile": profile["id"], "model_requests": 0, "model_ms": 0.0,
-             "tools_executed": 0, "usage_responses": 0,
+             "tools_executed": 0, "usage_responses": 0, "reflections": 0,
              "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def finish(answer: str, reason: str) -> AgentResult:
@@ -87,11 +92,21 @@ def run_agent(question: str, ds: Dataset, history: list[dict] | None = None,
         client = OpenAI(api_key=key, base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"), timeout=45.0, max_retries=1)
     chosen_model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + profile["instructions"] + "\n当前数据 Schema（无原始行）：" + json.dumps(ds.schema(), ensure_ascii=False)}]
-    for turn in (history or [])[-6:]:
+    # 历史上下文按字符预算纳入：从最新往前累计，超出预算则丢弃更早轮次。
+    budget_msgs: list[dict] = []
+    used = 0
+    for turn in reversed((history or [])[-MAX_HISTORY_TURNS:]):
         if turn.get("role") in {"user", "assistant"} and isinstance(turn.get("content"), str):
-            messages.append({"role": turn["role"], "content": turn["content"][:2500]})
+            content = turn["content"][:MAX_TURN_CHARS]
+            if used + len(content) > MAX_HISTORY_CHARS:
+                break
+            budget_msgs.append({"role": turn["role"], "content": content})
+            used += len(content)
+    messages.extend(reversed(budget_msgs))
     messages.append({"role": "user", "content": question[:4000]})
     total_calls = 0
+    consecutive_errors = 0
+    reflected = False
     for round_number in range(MAX_ROUNDS):
         request_started = perf_counter()
         stats["model_requests"] += 1
@@ -144,6 +159,11 @@ def run_agent(question: str, ds: Dataset, history: list[dict] | None = None,
             trace.append({"tool": call.function.name, "arguments": args if total_calls <= MAX_TOTAL_TOOLS else {},
                           "result": payload, "duration_ms": round((perf_counter() - tool_started) * 1000, 2)})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": _tool_reply(payload)})
+            consecutive_errors = consecutive_errors + 1 if payload.get("status") != "ok" else 0
+        if not reflected and consecutive_errors >= REFLECTION_THRESHOLD and total_calls < MAX_TOTAL_TOOLS:
+            messages.append({"role": "user", "content": REFLECTION_PROMPT})
+            stats["reflections"] += 1
+            reflected = True
         if total_calls >= MAX_TOTAL_TOOLS:
             break
     return finish("本轮已达到安全的工具调用上限，已展示实际执行结果。请缩小问题范围后继续。", "limit_reached")
