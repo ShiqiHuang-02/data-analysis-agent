@@ -23,6 +23,13 @@ from core.visualization import build_chart
 from core.profiles import PROFILE_LABELS, resolve_profile
 
 load_dotenv()
+# Streamlit Community Cloud：把 secrets 里的配置注入环境变量，云端也能启用对话。
+try:
+    for _key in ("DEEPSEEK_API_KEY", "DEEPSEEK_MODEL", "DEEPSEEK_BASE_URL"):
+        if not os.getenv(_key) and _key in st.secrets:
+            os.environ[_key] = str(st.secrets[_key])
+except Exception:
+    pass  # 无 secrets 配置时进入离线模式，不阻断启动
 st.set_page_config(page_title="Data Analysis Agent", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>

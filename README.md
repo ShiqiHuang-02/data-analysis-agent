@@ -4,6 +4,29 @@
 
 项目使用 Streamlit 构建交互界面，Pandas 负责数据计算，Matplotlib 和 Seaborn 负责绘图。用户可以上传 CSV 或 Excel 文件，通过对话完成数据探索、分组统计、时间趋势分析以及简单的数据清洗。
 
+## 在线 Demo
+
+本项目可直接部署到 [Streamlit Community Cloud](https://streamlit.io/cloud)（免费，连接 GitHub 仓库，无需服务器）。
+
+[![部署到 Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+
+**部署步骤（约 2 分钟）：**
+
+1. 打开 [share.streamlit.io](https://share.streamlit.io/)，用 GitHub 账号登录。
+2. 点 **New app**，仓库选 `ShiqiHuang-02/data-analysis-agent`，分支 `main`，主文件填 `app_streamlit.py`。
+3. 点 **Deploy**，等构建完成即可得到公网链接。
+
+**启用自然语言对话（可选）：** 进入应用的 **Settings → Secrets**，粘贴一条 secret：
+
+```toml
+DEEPSEEK_API_KEY = "你的 DeepSeek Key"
+DEEPSEEK_MODEL = "deepseek-chat"
+```
+
+不配置 Key 也能用：内置销售示例数据，以及离线分析、多维汇总、数据清洗等功能均可用；配置后即可使用 Agent 自然语言对话。
+
+> 云端已通过 `packages.txt` 安装中文字体（Noto CJK），图表中文标签正常显示。
+
 ## 功能介绍
 
 目前支持以下功能：
