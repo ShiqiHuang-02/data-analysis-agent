@@ -84,6 +84,20 @@ class Dataset:
     def filter_df(self, where: dict[str, Any] | None = None) -> pd.DataFrame:
         if not where:
             return self.df
+        # Validate here too: chart rendering and offline callers share this entry.
+        from core.schemas import FilterArgs, FilterGroupArgs
+        if "conditions" in where:
+            group = FilterGroupArgs.model_validate(where)
+            masks = [self._filter_mask(c.model_dump()) for c in group.conditions]
+            mask = masks[0]
+            for other in masks[1:]:
+                mask = mask & other if group.logic == "and" else mask | other
+        else:
+            condition = FilterArgs.model_validate(where)
+            mask = self._filter_mask(condition.model_dump())
+        return self.df.loc[mask.fillna(False)]
+
+    def _filter_mask(self, where: dict[str, Any]) -> pd.Series:
         col = where["column"]
         op = where["operator"]
         val = where.get("value")
@@ -96,7 +110,14 @@ class Dataset:
         else:
             if val is None:
                 raise ValueError(f"操作符 {op} 需要 value。")
-            if pd.api.types.is_numeric_dtype(s):
+            if where.get("value_type") == "datetime":
+                if pd.api.types.is_numeric_dtype(s):
+                    raise ValueError("数值列不能直接作为日期筛选，请先使用日期字符串。")
+                s = pd.to_datetime(s, errors="coerce", format="mixed", utc=True)
+                v = pd.to_datetime(val, errors="raise", utc=True)
+                if pd.isna(v):
+                    raise ValueError("日期筛选值无效。")
+            elif pd.api.types.is_numeric_dtype(s):
                 try:
                     v = float(val)
                 except (ValueError, TypeError):
@@ -114,5 +135,6 @@ class Dataset:
                 "gt": lambda: s > v, "ge": lambda: s >= v,
                 "lt": lambda: s < v, "le": lambda: s <= v,
             }
-            mask = ops[op]()
-        return self.df.loc[mask.fillna(False)]
+            # Missing/invalid values never satisfy comparisons (including ne).
+            mask = ops[op]() & s.notna()
+        return mask.fillna(False)

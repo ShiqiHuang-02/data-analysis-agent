@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from core.dataset import Dataset
 from core.schemas import TOOL_SCHEMAS
 from core.trends import summarize_trend
+from core.aggregation import aggregate_table
 
 
 def _safe(value: Any) -> Any:
@@ -157,6 +158,7 @@ FUNCTIONS = {
     "make_chart": make_chart,
     "clean_preview": clean_preview,
     "time_trend": summarize_trend,
+    "aggregate_table": aggregate_table,
 }
 
 
@@ -167,6 +169,8 @@ def run_tool(ds: Dataset, name: str, arguments: dict) -> dict:
     try:
         parsed = TOOL_SCHEMAS[name].model_validate(arguments)
         payload = FUNCTIONS[name](ds, parsed.model_dump(exclude_none=True))
+        if hasattr(parsed, "where") and parsed.where is not None:
+            payload["applied_filter"] = parsed.where.model_dump(exclude_none=True)
         return {"status": "ok", **_safe(payload)}
     except (ValidationError, ValueError, KeyError, TypeError, OverflowError) as exc:
         return {"status": "error", "error": str(exc)[:500],

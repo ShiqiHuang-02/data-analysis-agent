@@ -17,6 +17,7 @@ for _font in ("PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft 
     plt.rcParams["font.sans-serif"] = [_font, "DejaVu Sans"]
     break
 plt.rcParams["axes.unicode_minus"] = False
+_CHART_RC = {"font.sans-serif": list(plt.rcParams["font.sans-serif"]), "axes.unicode_minus": False}
 from core.dataset import Dataset
 from core.schemas import ChartArgs, TrendArgs
 from core.trends import summarize_trend
@@ -33,7 +34,7 @@ def build_chart(ds: Dataset, spec: dict):
         ds.ensure_column(y)
     if df.empty:
         raise ValueError("无法绘制空数据集。")
-    sns.set_theme(style="whitegrid")
+    sns.set_theme(style="whitegrid", rc=_CHART_RC)
     fig, ax = plt.subplots(figsize=(8.6, 4.8), constrained_layout=True)
     try:
         if kind in {"bar", "line"}:
@@ -79,7 +80,7 @@ def _build_time_trend(ds: Dataset, spec: dict):
     rows = data["table"]
     if not rows:
         raise ValueError("没有可绘制的时间分组。")
-    sns.set_theme(style="whitegrid")
+    sns.set_theme(style="whitegrid", rc=_CHART_RC)
     fig, ax = plt.subplots(figsize=(8.6, 4.8), constrained_layout=True)
     try:
         times = pd.to_datetime([r["period"] for r in rows])

@@ -4,6 +4,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 import hashlib
+import json
 import os
 
 import matplotlib.pyplot as plt
@@ -17,6 +18,7 @@ from core.cleaning import proposal_from_trace, confirm_proposal
 from core.schemas import TOOL_SCHEMAS
 from core.tools import compute_clean, run_tool
 from core.visualization import build_chart
+from core.profiles import PROFILE_LABELS, resolve_profile
 
 load_dotenv()
 st.set_page_config(page_title="Data Analysis Agent", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
@@ -65,6 +67,13 @@ def load_data():
         st.success("API Key 已配置") if configured else st.warning("未配置 API Key：聊天功能不可用，离线工具仍可用")
         model = st.text_input("模型名称", value=os.getenv("DEEPSEEK_MODEL", "deepseek-flash"))
         st.caption("不要在聊天框或代码仓库中粘贴真实 API Key。")
+        st.subheader("分析场景")
+        profile_mode = st.selectbox("业务口径提示", list(PROFILE_LABELS),
+                                    format_func=lambda key: PROFILE_LABELS[key])
+        profile = resolve_profile(st.session_state["dataset"], profile_mode)
+        st.caption(f"当前：{profile['label']}。{profile['reason']}")
+        with st.expander("查看当前口径规则"):
+            st.text(profile["instructions"])
         st.divider()
         if st.button("清空当前对话", use_container_width=True):
             st.session_state["messages"] = []
@@ -78,7 +87,7 @@ def load_data():
             st.session_state["pending_clean"] = None
             st.session_state["last_offline"] = None
             st.rerun()
-    return st.session_state["dataset"], model
+    return st.session_state["dataset"], model, profile_mode
 
 
 def render_result(result: dict, *, key: str):
@@ -91,6 +100,20 @@ def render_result(result: dict, *, key: str):
         st.dataframe(table, use_container_width=True, hide_index=True)
         st.download_button("下载此结果 CSV", data=table.to_csv(index=False).encode("utf-8-sig"),
                            file_name="analysis_result.csv", mime="text/csv", key=f"dl_{key}")
+    elif "table" in result and not result["table"]:
+        st.info("没有匹配的分组或可展示的记录。")
+    if "filtered_rows" in result:
+        st.caption(f"筛选后记录数：{result['filtered_rows']:,}")
+    if result.get("metric_definitions"):
+        with st.expander("指标口径与有效记录数"):
+            st.dataframe(pd.DataFrame(result["metric_definitions"]), hide_index=True, use_container_width=True)
+            st.caption(result["note"])
+    if "total_groups" in result:
+        st.caption(f"共 {result['total_groups']} 组，展示 {result['displayed_groups']} 组。" +
+                   ("结果已截断，当前表格不代表全部分组。" if result["truncated"] else ""))
+    if result.get("applied_filter"):
+        with st.expander("实际筛选条件"):
+            st.json(result["applied_filter"])
     if kind == "chart":
         try:
             fig = build_chart(st.session_state["dataset"], result["chart_spec"])
@@ -111,7 +134,23 @@ def render_result(result: dict, *, key: str):
         st.caption(f"统计基于本地 Pandas 执行；当前数据行数：{len(st.session_state['dataset'].df):,}")
 
 
-ds, selected_model = load_data()
+def render_run_stats(stats: dict, trace: list, *, key: str):
+    if not stats:
+        return
+    token_label = "未返回" if stats["total_tokens"] is None else f"{stats['total_tokens']:,}"
+    if stats["usage_status"] == "partial":
+        token_label += "（部分请求）"
+    st.caption(f"本轮耗时 {stats['elapsed_ms'] / 1000:.2f} 秒 · 模型请求 {stats['model_requests']} 次 · "
+               f"工具执行 {stats['tools_executed']} 次 · Token {token_label}")
+    with st.expander("运行统计与记录导出"):
+        st.json(stats)
+        st.caption("Token 按 API 实际返回累计；未返回或部分返回会明确标注。耗时不含后续界面绘图，SDK 内部重试计入单次请求耗时。记录包含问题相关参数及聚合结果，分享前请检查。")
+        st.download_button("下载本轮运行记录 JSON",
+                           json.dumps({"stats": stats, "trace": trace}, ensure_ascii=False, indent=2, default=str),
+                           file_name="agent_run.json", mime="application/json", key=f"run_{key}")
+
+
+ds, selected_model, selected_profile = load_data()
 cols = st.columns(4)
 with cols[0]: st.metric("数据行数", f"{len(ds.df):,}")
 with cols[1]: st.metric("字段数量", ds.df.shape[1])
@@ -119,10 +158,10 @@ with cols[2]: st.metric("缺失单元格", f"{int(ds.df.isna().sum().sum()):,}")
 with cols[3]: st.metric("重复记录", f"{int(ds.df.duplicated().sum()):,}")
 
 st.caption("🔐 本地读取原始文件，发送给 DeepSeek 的内容包括你的问题、列名与类型、聚合统计结果；请勿上传或查询未经授权的敏感数据。")
-chat_tab, tools_tab, cleaning_tab, raw_tab = st.tabs(["💬 Agent 对话", "📈 离线分析", "🧹 数据清洗", "🗃️ 数据预览"])
+chat_tab, tools_tab, advanced_tab, cleaning_tab, raw_tab = st.tabs(["💬 Agent 对话", "📈 离线分析", "📊 多维汇总", "🧹 数据清洗", "🗃️ 数据预览"])
 
 with chat_tab:
-    st.caption("试试：‘查看数据概况’、‘按地区统计销售额’、‘按月统计销售额趋势’、‘用中位数填充评分列缺失值’")
+    st.caption("试试：‘按地区和渠道同时统计销售额总和、订单数总和和平均客户满意度’、‘筛选华北且销售额大于 100 的记录，按月汇总销售额’")
     for i, item in enumerate(st.session_state["messages"]):
         with st.chat_message(item["role"]):
             st.markdown(item["content"])
@@ -130,7 +169,10 @@ with chat_tab:
                 with st.expander(f"🔎 工具调用记录（{len(item['trace'])} 次）", expanded=False):
                     for j, entry in enumerate(item["trace"]):
                         st.code(f"{entry['tool']}({entry['arguments']})", language="python")
+                        st.caption(f"工具耗时：{entry.get('duration_ms', 0):.2f} ms")
                         render_result(entry["result"], key=f"history_{i}_{j}")
+            if item["role"] == "assistant":
+                render_run_stats(item.get("stats", {}), item.get("trace", []), key=f"history_{i}")
     question = st.chat_input("用自然语言问这份数据...")
     if question:
         previous = [{"role": m["role"], "content": m["content"]} for m in st.session_state["messages"]]
@@ -139,14 +181,17 @@ with chat_tab:
             st.markdown(question)
         with st.chat_message("assistant"):
             with st.spinner("正在解析问题并调用本地分析工具..."):
-                result = run_agent(question, ds, history=previous, model=selected_model)
+                result = run_agent(question, ds, history=previous, model=selected_model, profile_mode=selected_profile)
             st.markdown(result.answer)
             if result.trace:
                 with st.expander(f"🔎 本轮工具调用记录（{len(result.trace)} 次）", expanded=True):
                     for j, entry in enumerate(result.trace):
                         st.code(f"{entry['tool']}({entry['arguments']})", language="python")
+                        st.caption(f"工具耗时：{entry.get('duration_ms', 0):.2f} ms")
                         render_result(entry["result"], key=f"new_{len(previous)}_{j}")
-        st.session_state["messages"].append({"role": "assistant", "content": result.answer, "trace": result.trace})
+            render_run_stats(result.stats, result.trace, key=f"new_{len(previous)}")
+        st.session_state["messages"].append({"role": "assistant", "content": result.answer,
+                                              "trace": result.trace, "stats": result.stats})
         proposal = proposal_from_trace(result.trace, st.session_state["dataset_revision"])
         if proposal:
             st.session_state["pending_clean"] = proposal
@@ -223,6 +268,59 @@ with tools_tab:
     if last_offline and last_offline["revision"] == st.session_state["dataset_revision"]:
         st.caption(f"当前工具：{last_offline['name']}")
         render_result(last_offline["result"], key="offline_run")
+
+with advanced_tab:
+    st.subheader("多维度、多指标汇总")
+    st.caption("无需 API，可与 Agent 结果交叉核对。最多 3 个分组字段、6 个指标、8 个 AND/OR 筛选条件。")
+    dimensions = st.multiselect("分组字段（留空则统计整体）", ds.column_names,
+                                default=[c for c in ("地区", "渠道") if c in ds.column_names], max_selections=3)
+    metric_count = st.number_input("指标数量", min_value=1, max_value=6, value=2)
+    operations = ["sum", "mean", "row_count", "count", "nunique", "median", "min", "max"]
+    operation_labels = {"sum": "求和", "mean": "非缺失均值", "row_count": "记录行数",
+                        "count": "非缺失值数量", "nunique": "非缺失去重数量",
+                        "median": "中位数", "min": "最小值", "max": "最大值"}
+    advanced_metrics = []
+    for index in range(int(metric_count)):
+        left, middle, right = st.columns(3)
+        operation = left.selectbox(f"指标 {index + 1} 的算法", operations,
+                                   format_func=lambda op: operation_labels[op], key=f"metric_op_{index}")
+        preferred = ["销售额", "订单数"][index] if index < 2 else ds.column_names[0]
+        column = middle.selectbox(f"指标 {index + 1} 的字段", ds.column_names,
+                                   index=ds.column_names.index(preferred) if preferred in ds.column_names else 0,
+                                   disabled=operation == "row_count", key=f"metric_col_{index}")
+        alias = right.text_input(f"指标 {index + 1} 的结果名称", key=f"metric_name_{index}",
+                                 placeholder="留空自动命名")
+        advanced_metrics.append({"name": alias.strip() or (f"{column}_{operation}" if operation != "row_count" else "记录行数"),
+                                 "agg": operation, **({"column": column} if operation != "row_count" else {})})
+    with st.expander("筛选条件", expanded=False):
+        condition_count = st.number_input("条件数量", min_value=0, max_value=8, value=0)
+        logic = st.radio("条件关系", ["and", "or"], format_func=lambda value: "全部满足（AND）" if value == "and" else "任一满足（OR）", horizontal=True)
+        conditions = []
+        for index in range(int(condition_count)):
+            c1, c2, c3, c4 = st.columns(4)
+            column = c1.selectbox(f"条件 {index + 1} 字段", ds.column_names, key=f"filter_col_{index}")
+            operator = c2.selectbox(f"条件 {index + 1} 比较", ["eq", "ne", "gt", "ge", "lt", "le", "is_null", "not_null"], key=f"filter_op_{index}")
+            value_type = c3.selectbox(f"条件 {index + 1} 类型", ["auto", "datetime"],
+                                       format_func=lambda value: "按字段类型" if value == "auto" else "日期", key=f"filter_type_{index}")
+            value = c4.text_input(f"条件 {index + 1} 值", disabled=operator in {"is_null", "not_null"}, key=f"filter_val_{index}")
+            conditions.append({"column": column, "operator": operator, "value_type": value_type,
+                               **({"value": value} if operator not in {"is_null", "not_null"} else {})})
+        st.caption("日期字符串筛选请选择“日期”。普通比较排除缺失值；日期比较还排除无法解析的值。时间带时区时按 UTC 比较。")
+    sort_options = [None] + list(dict.fromkeys(metric["name"] for metric in advanced_metrics))
+    sort_by = st.selectbox("按指标排序", sort_options, format_func=lambda value: value or "不排序")
+    ascending = st.checkbox("升序排列", value=False)
+    top_n = st.number_input("最多展示分组数", min_value=1, max_value=50, value=20)
+    if st.button("运行多维汇总", type="primary"):
+        args = {"group_by": dimensions, "metrics": advanced_metrics, "sort_by": sort_by,
+                "ascending": ascending, "top_n": int(top_n),
+                **({"where": {"logic": logic, "conditions": conditions}} if conditions else {})}
+        st.session_state["last_advanced"] = {"result": run_tool(ds, "aggregate_table", args),
+                                               "dataset_key": st.session_state["dataset_key"],
+                                               "revision": st.session_state["dataset_revision"]}
+    advanced = st.session_state.get("last_advanced")
+    if advanced and advanced["dataset_key"] == st.session_state["dataset_key"] and advanced["revision"] == st.session_state["dataset_revision"]:
+        st.caption("以下为上次运行的结果；调整字段、指标或筛选条件后，请重新点击“运行多维汇总”。")
+        render_result(advanced["result"], key="advanced")
 
 with cleaning_tab:
     st.subheader("可预览、可确认的数据清洗")
